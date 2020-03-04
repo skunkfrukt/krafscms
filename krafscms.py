@@ -2,6 +2,7 @@ import argparse
 from collections import ChainMap
 from pathlib import Path
 import re
+import shutil
 from typing import Tuple
 
 import markdown
@@ -71,7 +72,7 @@ def compile_from_source(source: str, depth: int = 0) -> str:
     return html
 
 
-def compile_file_to_file(source_path: Path, target_path: Path, depth: int = 0) -> None:
+def compile_md_to_file(source_path: Path, target_path: Path, depth: int = 0) -> None:
     with source_path.open(encoding="utf8") as f:
         source = f.read()
 
@@ -81,14 +82,42 @@ def compile_file_to_file(source_path: Path, target_path: Path, depth: int = 0) -
         f.write(compiled)
 
 
-def compile_all_files(base_dir: Path, target_dir: Path) -> None:
-    for source_path in base_dir.glob("**/*.md"):
-        rel_path = str(source_path.relative_to(base_dir)).replace("\\", "/")
-        depth = rel_path.count("/")
-        print(rel_path, depth)
-        target_path = target_dir / rel_path.replace(".md", ".html")
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        compile_file_to_file(source_path, target_path, depth=depth)
+def target_is_newer(source: Path, target: Path):
+    return target.exists() and target.stat().st_mtime >= source.stat().st_mtime
+
+
+def compile_all_files(source_root: Path, target_root: Path) -> None:
+    for source_path in source_root.glob("**/*.*"):
+        if not source_path.is_file():
+            continue
+
+        source_filename = source_path.name
+        extension = source_path.suffix
+
+        rel_path = source_path.relative_to(source_root)
+        rel_dir = rel_path.parent
+        depth = len(rel_dir.parents)
+
+        target_dir = target_root / rel_dir
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        if extension == ".md":
+            target_filename = f"{source_path.stem}.html"
+            target_path = target_dir / target_filename
+
+            if target_is_newer(source_path, target_path):
+                continue
+
+            print("md", rel_path, "->", rel_dir / target_filename)
+            compile_md_to_file(source_path, target_path, depth=depth)
+        else:
+            target_path = target_dir / source_filename
+
+            if target_is_newer(source_path, target_path):
+                continue
+
+            print("cp", rel_path, "->", rel_path)
+            shutil.copyfile(source_path, target_path)
 
 
 def main():
